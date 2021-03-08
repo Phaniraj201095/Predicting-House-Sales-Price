@@ -1,0 +1,495 @@
+---
+title: "Project"
+author: "Team 9"
+date: "12/16/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(plyr)
+library(grid)
+```
+
+```{r}
+
+trainData<-read.csv("train.csv")
+testData<-read.csv("test.csv")
+
+target <- 'SalePrice'
+predictors <- setdiff(colnames(trainData), target)
+
+trainData_wrk <- select(trainData, -Id, -SalePrice) 
+testData_wrk <- select(testData, -Id)
+
+```
+```{r}
+# Saving train data index for splitting later
+trainingRowIndex <- nrow(trainData)
+trainingSample <- nrow(trainData)
+testingSample <- nrow(testData)
+totalSample <- trainingSample + testingSample
+
+testingRowIndex <- trainingRowIndex + 1
+
+totalFeatures <- length(predictors)
+
+##CompleteData is ready for data cleansing
+completeData <- rbind(trainData_wrk, testData_wrk)
+
+```
+
+```{r} 
+summary(completeData)
+
+```
+We are seeing lot of NA's in the summary but we should also be aware that those NA's mean something to the feature.
+```{r}
+colSums(is.na(completeData))
+```
+
+```{r}
+# create table to count null values and percentage against overall population
+null_count_df <- sapply(completeData, function(y) sum(length(which(is.na(y)))))
+null_count_df <- data.frame(sort(null_count_df[null_count_df>0], decreasing = TRUE))
+colnames(null_count_df)[1] <- "NullCount"
+null_count_df$PctNull <- round(null_count_df$NullCount / (trainingSample+testingSample), 2)
+null_count_df
+```
+
+```{r}
+#Cleaning features that has more than 40% null values
+predictors <- colnames(completeData)
+null_col_name <- rownames(null_count_df[null_count_df$PctNull>=as.numeric(0.40), ])
+predictors <- setdiff(predictors, null_col_name)
+completeData <- completeData[ ,predictors]
+```
+
+```{r}
+##Handle Missing / Null values for Numeric Features
+
+Mode = function(x){
+  ta = table(x)
+  tam = max(ta)
+  mod = names(ta)[ta==tam]
+  return(mod)
+}
+
+## Identify numeric variables and treat them with mean value if any missing / null values exists
+for (col_name in colnames(completeData[sapply(completeData, is.numeric) == TRUE])) {
+  
+  if (sum(is.na(completeData[[col_name]])) > 0) {
+    completeData[col_name][is.na(completeData[col_name])] <- mean(completeData[[col_name]], na.rm = T)
+    }
+}
+##categorical variables replaced with mode 
+for (col_name in colnames(completeData[sapply(completeData, is.factor) == TRUE])) {
+  
+  if (sum(is.na(completeData[[col_name]])) > 0) {
+    completeData[col_name][is.na(completeData[col_name])] <- Mode(completeData[[col_name]])
+  }
+}
+```
+
+EDA
+
+```{r}
+options(repr.plot.width=9, repr.plot.height=6)
+options(scipen=10000)
+
+ggplot(trainData, aes(x = SalePrice,fill=..count..)) +
+  geom_histogram(binwidth = 5000,color="black") +  
+  ggtitle("Histogram of SalePrice") +
+  ylab("Count of houses") +
+  xlab("Housing Price") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+```{r}
+#log term of SalePrice
+trainData$lSalePrice <- log(trainData$SalePrice)  
+ggplot(trainData, aes(x = lSalePrice, fill = ..count..)) +
+  geom_histogram(binwidth = 0.05,color="black") +
+  ggtitle("Histogram of log SalePrice") +
+  ylab("Count of houses") +
+  xlab("Housing Price") + 
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+the distribution of SalePrice by MSZoning
+```{r}
+options(repr.plot.width=5, repr.plot.height=4)
+ggplot(trainData, aes(x = MSZoning, fill = MSZoning )) + 
+  geom_bar(color="black")+ 
+  ggtitle("Distribution of MSZoning")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="right", legend.background = element_rect(fill="grey90",
+                                                                                                         size=0.5, linetype="solid", 
+                                                                                                         colour ="black"))+
+  geom_text(stat='count',aes(label=..count..),vjust=-0.25)
+
+```
+Residential Low density - has sold the most , Commercial - least . This gives us an idea on the people's preference
+
+
+```{r}
+options(repr.plot.width=5, repr.plot.height=4)
+ggplot(trainData, aes(x = YrSold, fill = YrSold )) + 
+  geom_bar(color="black")+ 
+  ggtitle("Plot sold year-wise")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="right", legend.background = element_rect(fill="grey90",
+                                                                                                         size=0.5, linetype="solid", 
+                                                                                                         colour ="black"))+
+  geom_text(stat='count',aes(label=..count..),vjust=-0.25)
+
+```
+
+```{r}
+#boxplot of SalePrice by MSZoning
+ggplot(trainData, aes(x=MSZoning, y=SalePrice, fill=MSZoning)) + 
+  geom_boxplot(alpha=0.3,color="black") +
+  stat_summary(fun.y=mean, geom="point", shape=20, size=4, color="red", fill="red")+
+  theme(legend.position="none")+
+  ggtitle("Figure 4 Boxplot of SalePrice by MSZoning")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+#boxplot of SalePrice by MSZoning
+ggplot(trainData, aes(x=YrSold, y=SalePrice,fill=YrSold)) + 
+  geom_boxplot(alpha=0.3,color="black") +
+  stat_summary(fun.y=mean, geom="point", shape=20, size=4, color="red", fill="red")+
+  theme(legend.position="none")+
+  ggtitle("Yearly-average")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+Average salePrice of Floating Village Zone is high ??
+
+
+```{r}
+#boxplot of SalePrice by MSZoning
+ggplot(trainData, aes(x=BldgType, y=SalePrice, fill=BldgType)) + 
+  geom_boxplot(alpha=0.3,color="black") +
+  stat_summary(fun.y=mean, geom="point", shape=20, size=4, color="red", fill="red")+
+  theme(legend.position="none")+
+  ggtitle("Dwelling Type Box-plot")+
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+```{r}
+ddply(trainData, .(BldgType),plyr::summarize,Total = length(BldgType),Max_price=max(SalePrice),Min_price=min(SalePrice))
+```
+Single Family detached sold the most.Surprising to find single Family detached house has a max price 755K which is the maximum amount ever sold when compared to other building type.
+
+```{r}
+##Distribution of MSZoning across Garage Type
+ggplot(completeData, aes(x = GarageType)) + 
+  geom_bar(color="black")+ 
+  ggtitle(" ")+
+  theme(plot.title = element_text(hjust = 0.5), panel.background = element_rect(fill = "#BFD5E3", colour = "#6D9EC1",
+                                                                                size = 2, linetype = "solid"))+
+  geom_text(stat='count',aes(label=..count..),vjust=-0.25)
+```
+```{r}
+completeData$GarageAttchd <- ifelse(completeData$GarageType == "Attchd" | completeData$GarageType == "BuiltIn", 1, 0)
+completeData$GarageAttchd <- as.integer(completeData$GarageAttchd)
+completeData$GarageDetchd <- (completeData$GarageType == 'Detchd') * 1
+```
+
+```{r}
+ggplot(trainData, aes(x=BldgType, y=SalePrice, fill=MSZoning)) + 
+  geom_point(size=2,shape=23)+facet_grid(.~YrSold)+theme(axis.text.x = element_text(angle = 90))
+
+```
+
+```{r}
+#ddply(trainData, .(YearBuilt), plyr::summarize,Total = length(YearBuilt),Max_price=max(SalePrice),Min_price=min(SalePrice))
+```
+
+```{r}
+##Distribution of MSZoning across Garage Type
+ggplot(trainData, aes(x = BsmtCond,y=SalePrice)) + 
+  geom_point(size=2)+ 
+  ggtitle("Distribution of Basement condition")+
+  theme(plot.title = element_text(hjust = 0.5), panel.background = element_rect(fill = "#BFD5E3", colour = "#6D9EC1",
+                                                                                size = 2, linetype = "solid"))
+```
+SaleProve is high for Averagely maintained Basement condition. Doesn't make sense
+
+```{r}
+ggplot(trainData, aes(x = KitchenQual,y=SalePrice)) + 
+  geom_point(size=2)+ 
+  ggtitle("Distribution of kitchen quality")+
+  theme(plot.title = element_text(hjust = 0.5), panel.background = element_rect(fill = "#BFD5E3", colour = "#6D9EC1",
+                                                                                size = 2, linetype = "solid"))
+```
+
+```{r}
+ggplot(trainData, aes(x = Electrical,y=SalePrice)) + 
+  geom_point(size=2)+ 
+  ggtitle("Distribution of Electrical")+
+  theme(plot.title = element_text(hjust = 0.5), panel.background = element_rect(fill = "#BFD5E3", colour = "#6D9EC1",
+                                                                                size = 2, linetype = "solid"))
+```
+
+```{r}
+completeData$ElectricalSB <- (completeData$Electrical == 'SBrkr') * 1
+completeData$ElectricalFuse <- (completeData$Electrical == 'FuseA' | completeData$Electrical == 'FuseF' | completeData$Electrical == 'FuseP') * 1
+
+```
+Changing factors to Numeric
+```{r}
+qual.cols <-c('Po','Fa','TA','Gd','Ex')
+qual.list <- c('Po' = 1, 'Fa' = 2, 'TA' = 3, 'Gd' = 4, 'Ex' = 5)
+
+completeData$BsmtCond<- as.numeric(mapvalues(completeData$BsmtCond,qual.cols, qual.list))
+completeData$GarageQual<- as.numeric(mapvalues(completeData$GarageQual,qual.cols, qual.list))
+completeData$GarageCond<- as.numeric(mapvalues(completeData$GarageCond,qual.cols, qual.list))
+completeData$KitchenQual<- as.numeric(mapvalues(completeData$KitchenQual,qual.cols, qual.list))
+completeData$HeatingQC<- as.numeric(mapvalues(completeData$HeatingQC,qual.cols, qual.list))
+completeData$BsmtQual<- as.numeric(mapvalues(completeData$BsmtQual,qual.cols, qual.list))
+
+bsmt.fin.col <- c('Unf', 'LwQ','Rec', 'BLQ', 'ALQ', 'GLQ')
+bsmt.fin.list <- c('Unf' = 1, 'LwQ' = 2,'Rec'= 3, 'BLQ' = 4, 'ALQ' = 5, 'GLQ' = 6)
+completeData$BsmtFinType1<- as.numeric(mapvalues(completeData$BsmtFinType1,bsmt.fin.col, bsmt.fin.list))
+completeData$BsmtFinType2<- as.numeric(mapvalues(completeData$BsmtFinType2,bsmt.fin.col, bsmt.fin.list))
+
+bsmt.col <- c('No', 'Mn', 'Av', 'Gd')
+bsmt.list <- c('No' = 1, 'Mn' = 2, 'Av' = 3, 'Gd' = 4)
+completeData$BsmtExposure<- as.numeric(mapvalues(completeData$BsmtExposure,bsmt.col, bsmt.list))
+
+nbrh.map <- c('MeadowV' = 0, 'IDOTRR' = 1, 'Sawyer' = 1, 'BrDale' = 1, 'OldTown' = 1, 'Edwards' = 1, 
+              'BrkSide' = 1, 'Blueste' = 2, 'SWISU' = 2, 'NAmes' = 2, 'NPkVill' = 2, 'Mitchel' = 2,
+              'SawyerW' = 2, 'Gilbert' = 3, 'NWAmes' = 3, 'Blmngtn' = 3, 'CollgCr' = 3, 'Crawfor' = 3, 
+              'ClearCr' = 4, 'Veenker' = 4, 'Somerst' = 4, 'Timber' = 4, 'StoneBr' = 5, 'NoRidge' = 5, 
+              'NridgHt' = 5)
+completeData$Neighborhood_bin <- as.numeric(nbrh.map[completeData$Neighborhood])
+
+MSzone.col <-c('A','C','FV','I','RH','RL','RP','RM')
+MSZone.list <-c('A'=1,'C'=2,'FV'=3,'I'=4,'RH'=5,'RL'=6,'RP'=7,'RM'=8)
+completeData$MSZoning<- as.numeric(mapvalues(completeData$MSZoning,bsmt.col, bsmt.list))
+
+completeData$CentralAir=ifelse(completeData$CentralAir=="Y",1,0)
+completeData$CentralAir <- as.integer(completeData$CentralAir)
+
+```
+```{r}
+#Changing year to use them in the model
+completeData$yrs_since_built <- 2010 - completeData$YearBuilt
+completeData$yrs_since_sold <- 2010 - completeData$YrSold
+completeData$yrs_since_remod <- completeData$YrSold - completeData$YearRemodAdd
+
+#creating grades
+completeData$BsmtGrade <- ((completeData$BsmtQual)*1) * ((completeData$BsmtCond)*1)
+completeData$GarageGrade <- completeData$GarageQual * completeData$GarageCond
+completeData$TotalArea <- completeData$GrLivArea + completeData$TotalBsmtSF
+completeData$MSSubClass<-completeData$MSSubClass*1
+
+```
+
+```{r}
+#Removing less important features
+remove_feat <- c('Street', 'Utilities', 'YearBuilt', 'YearRemodAdd', 'YrSold', 'GarageYrBlt','SaleType',
+                 'GarageType', 'PavedDrive', 'LandContour', 'LandSlope', 'Neighborhood', 'Exterior1st','GarageFinish',
+                 'Exterior2nd', 'Electrical', 'X2ndFlrSF', 'MasVnrArea', 'WoodDeckSF',                                        'OpenPorchSF','SaleCondition','RoofStyle',
+                 'EnclosedPorch', 'X3SsnPorch', 'ScreenPorch', 'PoolArea', 'LowQualFinSF', 'MiscVal','ExterQual','ExterCond',
+                 'Foundation', 'Heating','LotShape','LotConfig','Condition1','Condition2','MasVnrType','Functional','HouseStyle','RoofMatl','BldgType')
+
+predictors<-colnames(completeData)
+predictors <- setdiff(predictors, remove_feat)
+completeData <- completeData[ , predictors]
+
+```
+
+
+```{r}
+# transform into log variables
+completeLog <- completeData
+completeLog$LotFrontage <- log(completeData$LotFrontage)
+completeLog$LotArea <- log(completeData$LotArea)
+trainScaled = completeLog[1:trainingRowIndex, ]
+testScaled = completeLog[testingRowIndex:totalSample, ]
+trainScaled$SalePrice <- log(trainData$SalePrice)
+
+```
+
+
+```{r}
+
+library(corrplot)
+m<-cor(trainScaled)
+
+```
+
+```{r}
+
+ggplot(trainScaled, aes(x=GrLivArea, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and GrLivArea") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+
+```{r}
+
+ggplot(trainScaled, aes(x=TotalBsmtSF, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("FScatter plot of SalePrice and TotalBsmtSF") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+
+```{r}
+#scatter plot of TotRmsAbvGrd
+ggplot(trainScaled, aes(x=TotRmsAbvGrd, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and TotRmsAbvGrd") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+
+```{r}
+#scatter plot of GarageArea
+ggplot(trainScaled, aes(x=GarageArea, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and GarageArea") +
+  theme(plot.title = element_text(hjust = 0.4))
+  
+```
+
+
+GrLivArea, TotalBsmtSF, TotRmsAbvGrd, and GarageArea are positively correlated with SalePrice, which means with the increase of GrLivArea, TotalBsmtSF, TotRmsAbvGrd and GarageArea, the SalePrice also increases.
+TotalBsmtSF has more concentrated distribution than others
+```{r}
+#scatter plot of GarageArea
+ggplot(trainScaled, aes(x=trainScaled$yrs_since_built, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Year built and Sales Price") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+```{r}
+ggplot(trainScaled, aes(x=trainScaled$yrs_since_sold, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and GarageArea") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+Looks like we can drop this column .No variance
+```{r}
+ggplot(trainScaled, aes(x=trainScaled$yrs_since_remod, y=SalePrice)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and GarageArea") +
+  theme(plot.title = element_text(hjust = 0.4))
+
+```
+
+```{r}
+#colSums(is.na(trainScaled))
+```
+
+```{r}
+ggplot(trainScaled, aes(x=GarageCars, y=TotalArea)) + 
+  geom_point(shape=1) +  
+  geom_smooth(method=lm , color="red", se=FALSE)+
+  ggtitle("Scatter plot of SalePrice and GarageArea") +
+  theme(plot.title = element_text(hjust = 0.4))
+```
+
+```{r}
+#Dont use it for report
+
+# flattenCorrMatrix <- function(cormat, pmat) {
+#   ut <- upper.tri(cormat)
+#   data.frame(
+#     row = rownames(cormat)[row(cormat)[ut]],
+#     column = rownames(cormat)[col(cormat)[ut]],
+#     cor  =(cormat)[ut],
+#     p = pmat[ut]
+#     )
+# }
+```
+
+
+```{r}
+# #Dont use it for report
+# cor(trainScaled$SalePrice,trainScaled$GarageCars)
+# cor.test(trainScaled$LotArea,trainScaled$GarageCars,method = "pearson")
+# 
+# 
+# cor(trainScaled$SalePrice,trainScaled$MSZoning)
+# cor(trainScaled$SalePrice,trainScaled$MSSubClass)
+# 
+# typeof(trainScaled$MSZoning)
+
+```
+
+Model related work 
+```{r}
+#Removing multi-collinearity 
+
+library(caret)
+train_corr <- cor(trainScaled[ ,predictors])
+train_high_corr_v <- findCorrelation(train_corr, cutoff=.8)
+
+train_low_corr <- trainScaled[ ,-c(train_high_corr_v)]
+trainCleaned <- train_low_corr
+rm(train_low_corr)
+```
+
+```{r}
+new_col <-colnames(trainCleaned)
+new_col <- setdiff(names(trainCleaned), target)
+new_col
+```
+
+```{r}
+##Training model
+try <-colnames(testScaled)
+
+final_trainData <- trainCleaned[, new_col]
+final_trainData$SalePrice <- trainCleaned$SalePrice
+final_testData <- testScaled[ ,new_col]
+
+set.seed(123)
+library(caTools)
+sample = sample.split(final_trainData, SplitRatio = 0.70) 
+
+# creates a training dataset named train1 with rows which are marked as TRUE
+ames_trainData = subset(final_trainData, sample ==TRUE)
+
+ames_validationData = subset(final_trainData, sample==FALSE)
+
+ames_testData = final_testData
+```
+
+```{r}
+model_lm<-lm(SalePrice~.,data = ames_trainData)
+summary(model_lm)
+
+predict_data<-predict(model_lm,ames_validationData[,colnames(ames_validationData) != "SalePrice"])
+model_lm_resid <- ames_validationData$SalePrice - predict_data
+rmse.test.model.lm1 <- sqrt(mean(model_lm_resid^2, na.rm = TRUE))
+```
+
+```{r}
+
+model_rpart = caret::train(SalePrice ~ ., data=ames_trainData, method="rpart", tuneLength=10, metric="RMSE")
+
+# Extract Predictions
+model_rpart_pred <- predict(model_rpart, ames_validationData)
+
+# Extract Residuals
+model_rpart_resid <- ames_validationData$SalePrice - model_rpart_pred
+
+# Calculate RMSE
+rmse.test.model.rpart <- sqrt(mean(model_rpart_resid^2, na.rm = TRUE))
+
+valid.model.rpart <- data.frame(cbind(model="Decision Tree", rmse=rmse.test.model.rpart))
+valid.model.rpart
+
+
+```
